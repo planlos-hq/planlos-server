@@ -1,0 +1,9 @@
+begin;
+alter schema public rename to import_old;
+create schema public;
+grant usage, create on schema public to stundenplan;
+set search_path = public;
+
+__NEW_SCHEMA_PLACEHOLDER__
+  
+commit;

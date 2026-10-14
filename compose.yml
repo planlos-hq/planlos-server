@@ -1,0 +1,23 @@
+# PlanLos server. Needs a running planlos-db stack (same PLANLOS_NETWORK).
+# Configure via .env (see .env.example), then: docker compose up -d --build
+services:
+  server:
+    image: localhost/planlos-server:${IMAGE_TAG:-latest}
+    container_name: ${CONTAINER_NAME:-planlos-server}
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://planlos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@${DB_HOST:-planlos-db}:5432/planlos?sslmode=disable
+      NO_AUTH: ${NO_AUTH:-}
+    ports:
+      - "${SERVER_PORT:-8004}:8004"
+    volumes:
+      - backups:/root/backups
+
+networks:
+  default:
+    name: ${PLANLOS_NETWORK:-planlos-network}
+    external: true
+
+volumes:
+  backups:

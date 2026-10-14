@@ -1,0 +1,7 @@
+# .git stays in the context: the test stage runs `git diff` after formatting
+.env
+.direnv
+.vscode
+.idea
+compose.yml
+jenkinsfiles

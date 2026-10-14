@@ -1,0 +1,46 @@
+pipeline {
+  agent any
+  environment {
+    TAG                  = "${env.GIT_COMMIT.take(8)}"
+    TEST_IMAGE           = "localhost/planlos-server_test:${TAG}"
+    COMPOSE_PROJECT_NAME = "planlos-server-development"
+    CONTAINER_NAME       = "planlos-server-development"
+    IMAGE_TAG            = "development"
+    PLANLOS_NETWORK      = "planlos-network-dev"
+    SERVER_PORT          = "8007"
+    POSTGRES_PASSWORD    = credentials('planlos_db_password_dev')
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'git submodule update --init --recursive'
+      }
+    }
+
+    stage('Build image') {
+      steps {
+        sh 'docker compose build'
+        sh 'docker build --target test -t $TEST_IMAGE .'
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh 'docker run --rm $TEST_IMAGE sh -c "./format_sql.sh && git diff --exit-code --ignore-submodules=all ."'
+        sh 'docker run --rm $TEST_IMAGE go test ./...'
+      }
+    }
+
+    stage('Release') {
+      when {
+        expression {
+          env.GIT_BRANCH == 'origin/development'
+        }
+      }
+      steps {
+        sh 'docker compose up -d --remove-orphans'
+      }
+    }
+  }
+}
