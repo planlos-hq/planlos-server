@@ -8,7 +8,8 @@ begin
         pg_tables
     where
         schemaname = 'public'
-        and tablename != 'authorized_user';
+        -- Keep users and the schema version, otherwise the next start re-runs all migrations
+        and tablename not in ('authorized_user', 'schema_version_history');
     if tables is not null then
         execute 'truncate ' || tables || ' cascade';
     end if;

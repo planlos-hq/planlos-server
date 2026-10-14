@@ -42,14 +42,24 @@ func main() {
 	}
 	defer dbpool.Close()
 
-	const timeout = 3 * time.Second
-	connCheckCtx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	_, err = dbpool.Acquire(connCheckCtx)
-
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %s\n", err)
+	// The database runs in its own stack and may start later, so wait for it
+	const (
+		pingTimeout   = 3 * time.Second
+		retryInterval = 2 * time.Second
+		maxAttempts   = 30
+	)
+	for attempt := 1; ; attempt++ {
+		pingCtx, cancelPing := context.WithTimeout(context.Background(), pingTimeout)
+		err = dbpool.Ping(pingCtx)
+		cancelPing()
+		if err == nil {
+			break
+		}
+		if attempt == maxAttempts {
+			log.Fatalf("Unable to connect to database: %s\n", err)
+		}
+		log.Printf("Database not reachable yet (attempt %d/%d): %s\n", attempt, maxAttempts, err)
+		time.Sleep(retryInterval)
 	}
 
 	// timeout might need to be increased if migrating many versions at once
