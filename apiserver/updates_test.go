@@ -21,7 +21,7 @@ func TestUpdatesEndpoint(t *testing.T) {
 
 	// Use a recorder for more control over the stream
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/updates", nil)
-	
+
 	client := http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
