@@ -30,6 +30,7 @@ func registerRoutes(s *Server) {
 	registerLecturerTimeConstraintViolationRoutes(s, api)
 	registerCSVRoutes(s, api)
 	registerUpdateRoutes(s, api)
+	registerBatchRoutes(s, api)
 
 	// Individual register functions relative to /api/v1/
 	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", api))
