@@ -3,8 +3,8 @@ package apiserver
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
