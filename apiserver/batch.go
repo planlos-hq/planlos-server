@@ -380,8 +380,13 @@ func (b *batchRun) updateCourseTimeSlot(ctx context.Context, op BatchOp) (BatchR
 	if err != nil {
 		return BatchResult{}, err
 	}
+	// Ignores resolved by the change would otherwise be dropped by the next GET, outside of undo/redo
+	cascade, err := b.deleteIgnoresOfSlot(ctx, deleteSolvedIgnoresOfSlotQuery, deleteSolvedLecturerIgnoresOfSlotQuery, before.ID)
+	if err != nil {
+		return BatchResult{}, err
+	}
 	b.events = append(b.events, updateInfo{Resource: "courseTimeSlot", Operation: updateOperation, Data: after})
-	return BatchResult{Before: before, After: after}, nil
+	return BatchResult{Before: before, After: after, Cascade: cascade}, nil
 }
 
 func (b *batchRun) deleteCourseTimeSlot(ctx context.Context, op BatchOp) (BatchResult, error) {
@@ -390,7 +395,7 @@ func (b *batchRun) deleteCourseTimeSlot(ctx context.Context, op BatchOp) (BatchR
 		return BatchResult{}, err
 	}
 	// Delete ignored conflicts explicitly (not via FK cascade) so undo can restore them
-	cascade, err := b.deleteIgnoresOfSlot(ctx, before.ID)
+	cascade, err := b.deleteIgnoresOfSlot(ctx, deleteIgnoresOfSlotQuery, deleteLecturerIgnoresOfSlotQuery, before.ID)
 	if err != nil {
 		return BatchResult{}, err
 	}
@@ -446,8 +451,12 @@ func (b *batchRun) deleteTimeSlotRoomAssignment(ctx context.Context, op BatchOp)
 	if result.RowsAffected() == 0 {
 		return BatchResult{}, &batchError{http.StatusNotFound, "Die Raumzuweisung existiert nicht mehr"}
 	}
+	cascade, err := b.deleteIgnoresOfSlot(ctx, deleteSolvedIgnoresOfSlotQuery, deleteSolvedLecturerIgnoresOfSlotQuery, a.TimeSlot)
+	if err != nil {
+		return BatchResult{}, err
+	}
 	b.events = append(b.events, updateInfo{Resource: "timeSlotRoomAssignment", Operation: deletionOperation, Data: a})
-	return BatchResult{Before: a}, nil
+	return BatchResult{Before: a, Cascade: cascade}, nil
 }
 
 // --- courseColor ---
@@ -618,11 +627,18 @@ var deleteIgnoresOfSlotQuery string
 //go:embed queries/batch/delete_lecturer_ignores_of_slot.sql
 var deleteLecturerIgnoresOfSlotQuery string
 
-// deleteIgnoresOfSlot removes all ignored conflicts of a slot and returns them as cascade rows.
-func (b *batchRun) deleteIgnoresOfSlot(ctx context.Context, slotID int) ([]BatchCascade, error) {
+//go:embed queries/batch/delete_solved_ignores_of_slot.sql
+var deleteSolvedIgnoresOfSlotQuery string
+
+//go:embed queries/batch/delete_solved_lecturer_ignores_of_slot.sql
+var deleteSolvedLecturerIgnoresOfSlotQuery string
+
+// deleteIgnoresOfSlot removes ignored conflicts of a slot (all or only the solved ones, depending on
+// the queries) and returns them as cascade rows, so undo/redo can restore them.
+func (b *batchRun) deleteIgnoresOfSlot(ctx context.Context, resourceQuery, lecturerQuery string, slotID int) ([]BatchCascade, error) {
 	var cascade []BatchCascade
 
-	rows, err := b.tx.Query(ctx, deleteIgnoresOfSlotQuery, slotID)
+	rows, err := b.tx.Query(ctx, resourceQuery, slotID)
 	if err != nil {
 		return nil, err
 	}
@@ -638,7 +654,7 @@ func (b *batchRun) deleteIgnoresOfSlot(ctx context.Context, slotID int) ([]Batch
 		cascade = append(cascade, BatchCascade{Resource: "ignoredResourceConflict", Row: i})
 	}
 
-	rows, err = b.tx.Query(ctx, deleteLecturerIgnoresOfSlotQuery, slotID)
+	rows, err = b.tx.Query(ctx, lecturerQuery, slotID)
 	if err != nil {
 		return nil, err
 	}

@@ -394,4 +394,81 @@ func TestBatchIgnoredConflicts(t *testing.T) {
 			t.Fatalf("Expected 200, got %d: %v", status, out)
 		}
 	})
+
+	countIgnores := func() (resource, lecturer int) {
+		_ = pool.QueryRow(ctx, `select count(*) from ignored_resource_conflict where resource_id = $1`, roomID).Scan(&resource)
+		_ = pool.QueryRow(ctx, `select count(*) from ignored_lecturer_constraint_violation where time_slot_id = $1`, s1).Scan(&lecturer)
+		return resource, lecturer
+	}
+	cascadeOf := func(out map[string]any, i int) []any {
+		c, _ := out["results"].([]any)[i].(map[string]any)["cascade"].([]any)
+		return c
+	}
+
+	// Make both ignored conflicts real: shared room and a lecturer with a constraint at 08:00-10:00
+	if _, err := pool.Exec(ctx, `insert into time_slot_room_assignment values ($1, $3), ($2, $3)`, s1, s2, roomID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into course_lecturer values ($1, $2)`, courseID, lecturerID); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("UpdateKeepsIgnoresOfUnsolvedConflicts", func(t *testing.T) {
+		status, out := postBatch(t, ts.URL, fmt.Sprintf(`{"ops": [
+			{"kind": "update", "resource": "courseTimeSlot", "id": %d, "set": {"duration": "01:00"}}
+		]}`, s1))
+		if status != http.StatusOK {
+			t.Fatalf("Expected 200, got %d: %v", status, out)
+		}
+		if c := cascadeOf(out, 0); len(c) != 0 {
+			t.Errorf("Expected no cascade, got %v", c)
+		}
+		if r, l := countIgnores(); r != 1 || l != 1 {
+			t.Errorf("Ignores of unsolved conflicts must stay, got %d/%d", r, l)
+		}
+	})
+
+	t.Run("UpdateReportsSolvedIgnoresAsCascade", func(t *testing.T) {
+		status, out := postBatch(t, ts.URL, fmt.Sprintf(`{"ops": [
+			{"kind": "update", "resource": "courseTimeSlot", "id": %d, "set": {"at": "12:00"}}
+		]}`, s1))
+		if status != http.StatusOK {
+			t.Fatalf("Expected 200, got %d: %v", status, out)
+		}
+		if c := cascadeOf(out, 0); len(c) != 2 {
+			t.Fatalf("Expected 2 cascade rows, got %v", c)
+		}
+		if r, l := countIgnores(); r != 0 || l != 0 {
+			t.Errorf("Solved ignores must be removed, got %d/%d", r, l)
+		}
+
+		// Undo: move back and restore the ignores, the conflicts stay ignored
+		status, out = postBatch(t, ts.URL, fmt.Sprintf(`{"ops": [
+			{"kind": "update", "resource": "courseTimeSlot", "id": %d, "set": {"at": "08:00"}, "expect": {"at": "12:00"}},
+			{"kind": "create", "resource": "ignoredResourceConflict", "data": {"slot_a": %d, "slot_b": %d, "resource_type": "room", "resource_id": %d}},
+			{"kind": "create", "resource": "ignoredLecturerConstraintViolation", "data": {"constraint_id": %d, "time_slot_id": %d}}
+		]}`, s1, s1, s2, roomID, constraintID, s1))
+		if status != http.StatusOK {
+			t.Fatalf("Expected 200, got %d: %v", status, out)
+		}
+		if r, l := countIgnores(); r != 1 || l != 1 {
+			t.Errorf("Ignores not restored, got %d/%d", r, l)
+		}
+	})
+
+	t.Run("RemovingRoomReportsSolvedIgnoresAsCascade", func(t *testing.T) {
+		status, out := postBatch(t, ts.URL, fmt.Sprintf(`{"ops": [
+			{"kind": "delete", "resource": "timeSlotRoomAssignment", "data": {"time_slot": %d, "room": %d}}
+		]}`, s2, roomID))
+		if status != http.StatusOK {
+			t.Fatalf("Expected 200, got %d: %v", status, out)
+		}
+		c := cascadeOf(out, 0)
+		if len(c) != 1 || c[0].(map[string]any)["resource"] != "ignoredResourceConflict" {
+			t.Fatalf("Expected the room ignore as cascade, got %v", c)
+		}
+		if r, l := countIgnores(); r != 0 || l != 1 {
+			t.Errorf("Only the room ignore must be removed, got %d/%d", r, l)
+		}
+	})
 }
