@@ -28,6 +28,7 @@ func registerRoutes(s *Server) {
 	registerImportExportRoutes(s, api)
 	registerResourceConflictRoutes(s, api)
 	registerLecturerTimeConstraintViolationRoutes(s, api)
+	registerCourseLecturerViolationRoutes(s, api)
 	registerCSVRoutes(s, api)
 	registerUpdateRoutes(s, api)
 	registerBatchRoutes(s, api)
