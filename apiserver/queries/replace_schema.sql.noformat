@@ -5,5 +5,9 @@ grant usage, create on schema public to current_user;
 set search_path = public;
 
 __NEW_SCHEMA_PLACEHOLDER__
-  
+
+-- schema.sql inserts its own version, but the dump brings the full version history
+-- (otherwise pg_restore fails with a duplicate key on schema_version_history)
+truncate schema_version_history;
+
 commit;

@@ -325,6 +325,8 @@ func (s *Server) getDumpExport(w http.ResponseWriter, r *http.Request) {
 
 // Handler: POST /import/dump; Restore the database from an uploaded backup zip
 func (s *Server) postDumpImport(w http.ResponseWriter, r *http.Request) {
+	imported := false
+	defer notifyDumpImport(&imported)
 	maintenance.Store(true)
 	defer maintenance.Store(false)
 	dbMu.Lock()
@@ -396,12 +398,15 @@ func (s *Server) postDumpImport(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	imported = true
 
 	w.WriteHeader(http.StatusOK)
 }
 
 // Handler: POST /backups/restore/{id}; Restore the database from a backup stored on the server
 func (s *Server) postBackupRestore(w http.ResponseWriter, r *http.Request) {
+	imported := false
+	defer notifyDumpImport(&imported)
 	// Lock maintenance gate
 	maintenance.Store(true)
 	defer maintenance.Store(false)
@@ -444,6 +449,7 @@ func (s *Server) postBackupRestore(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	imported = true
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -451,6 +457,8 @@ func (s *Server) postBackupRestore(w http.ResponseWriter, r *http.Request) {
 // Handler: POST /truncate; Truncate all tables (except authorized_user) and send a backup of the previous state to the client.
 // If the backup fails, nothing is truncated.
 func (s *Server) postTruncate(w http.ResponseWriter, r *http.Request) {
+	imported := false
+	defer notifyDumpImport(&imported)
 	// Lock maintenance gate
 	maintenance.Store(true)
 	defer maintenance.Store(false)
@@ -479,10 +487,20 @@ func (s *Server) postTruncate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logRequest(r, "Database truncated, backup "+filename+" created")
+	imported = true
 
 	// Send backup file
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	http.ServeFile(w, r, zipPath) //nolint:gosec
+}
+
+// notifyDumpImport tells all clients (SSE) to reload every resource after the whole database was replaced.
+// Defer it before locking the maintenance gate, so it is sent once the gate is open again,
+// otherwise the clients' reload requests get rejected with 503.
+func notifyDumpImport(imported *bool) {
+	if *imported {
+		sendUpdate(updateInfo{Resource: "database", Operation: dumpImportOperation})
+	}
 }
 
 //go:embed queries/replace_schema.sql.noformat
