@@ -1,2 +1,1 @@
-insert into schema_version_history (version)
-    values (1);
+-- Initial version, see schema.sql. Nothing to migrate.

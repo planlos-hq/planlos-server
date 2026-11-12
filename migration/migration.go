@@ -17,6 +17,9 @@ import (
 //go:embed max_schema_version.sql
 var maxSchemaVersion string
 
+//go:embed record_schema_version.sql
+var recordSchemaVersion string
+
 var migrationsFS embed.FS
 
 type migrationEntry struct {
@@ -109,6 +112,11 @@ func RunMigrationsConn(ctx context.Context, conn *pgxpool.Conn) error {
 
 		if _, err = migrationTx.Exec(ctx, string(data)); err != nil {
 			return fmt.Errorf("Error applying migration %s: %w", migration.entry.Name(), err)
+		}
+
+		// insert the schema version here instead so the up.sql scripts can't get it wrong
+		if _, err = migrationTx.Exec(ctx, recordSchemaVersion, migration.value); err != nil {
+			return fmt.Errorf("Error recording schema version %d: %w", migration.value, err)
 		}
 	}
 

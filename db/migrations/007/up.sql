@@ -1,6 +1,3 @@
-insert into schema_version_history (version)
-    values (7);
-
 create table ignored_course_lecturer_violation (
     course int not null primary key references course (id) on delete cascade
 );

@@ -1,6 +1,3 @@
-insert into schema_version_history (version)
-    values (3);
-
 alter table lecturer
     add column extra_data jsonb not null default '{}'::jsonb;
 
